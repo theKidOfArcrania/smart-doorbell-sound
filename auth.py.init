@@ -1,0 +1,6 @@
+# Copy this to auth.py and fill fields out
+cloud_project_id = ''
+subscription_id = ''
+project_id = ''
+client_id = ''
+client_secret = ''

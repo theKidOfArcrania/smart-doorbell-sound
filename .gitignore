@@ -1,0 +1,5 @@
+.venv
+auth.py
+*.sw?
+__pycache__
+

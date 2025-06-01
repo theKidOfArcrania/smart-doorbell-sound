@@ -9,6 +9,7 @@ from google.cloud import pubsub_v1
 from urllib.parse import urlencode
 
 ap = argparse.ArgumentParser(description='Runs a doorbell sound from a smart doorbell')
+ap.add_argument('--test', action='store_true', help='test doorbell sound at start')
 aplay_group = ap.add_argument_group('aplay arguments')
 aplay_group.add_argument('-D', '--device', help='select PCM by name')
 aplay_group.add_argument('file', metavar='FILE', help='sound file to play for doorbell')
@@ -96,6 +97,10 @@ def main():
     global auth_code
     global ns
     ns = ap.parse_args()
+
+    if ns.test:
+        play_doorbell()
+
     url_query = urlencode({
         'redirect_uri': 'https://www.google.com',
         'access_type': 'offline',

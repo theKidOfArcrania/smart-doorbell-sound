@@ -1,11 +1,12 @@
+import argparse
 import auth
 import json
 import requests
 import subprocess
-import argparse
 
 from concurrent.futures import TimeoutError
 from google.cloud import pubsub_v1
+from urllib.parse import urlencode
 
 ap = argparse.ArgumentParser(description='Runs a doorbell sound from a smart doorbell')
 aplay_group = ap.add_argument_group('aplay arguments')
@@ -16,12 +17,13 @@ base = 'https://smartdevicemanagement.googleapis.com/v1'
 base_ent = f'{base}/enterprises/{auth.project_id}'
 
 def obtain_token():
+    global auth_code
     r = requests.post(
         'https://www.googleapis.com/oauth2/v4/token',
         params = {
             'client_id': auth.client_id,
             'client_secret': auth.client_secret,
-            'code': auth.auth_code,
+            'code': auth_code,
             'grant_type': 'authorization_code',
             'redirect_uri': 'https://www.google.com',
         }
@@ -29,6 +31,7 @@ def obtain_token():
     return r.json()
 
 def refresh_token(token):
+    print('Refreshing token...')
     r = requests.post(
         'https://www.googleapis.com/oauth2/v4/token',
         params = {
@@ -90,8 +93,21 @@ def callback(message: pubsub_v1.subscriber.message.Message) -> None:
         play_doorbell()
 
 def main():
+    global auth_code
     global ns
     ns = ap.parse_args()
+    url_query = urlencode({
+        'redirect_uri': 'https://www.google.com',
+        'access_type': 'offline',
+        'prompt': 'consent',
+        'client_id': auth.client_id,
+        'response_type': 'code',
+        'scope': 'https://www.googleapis.com/auth/sdm.service',
+    })
+    url = 'https://accounts.google.com/o/oauth2/v2/auth?' + url_query
+    print(f'Visit the url at: {url}')
+    auth_code = input('Code: ')
+
     subscriber = pubsub_v1.SubscriberClient()
     subscription_path = subscriber.subscription_path(
         auth.cloud_project_id,
@@ -103,13 +119,16 @@ def main():
 
     # Wrap subscriber in a 'with' block to automatically call close() when done.
     with subscriber:
-        try:
-            # When `timeout` is not set, result() will block indefinitely,
-            # unless an exception is encountered first.
-            streaming_pull_future.result()
-        except TimeoutError:
-            streaming_pull_future.cancel()  # Trigger the shutdown.
-            streaming_pull_future.result()  # Block until the shutdown is complete.
+        while True:
+            try:
+                streaming_pull_future.result(60 * 60 * 24)
+            except TimeoutError:
+                pass
+
+            # After this wait we want to refresh our token. This is done so by
+            # listing all devices
+            print('Listing devices...')
+            api_function(list_devices)
 
 if __name__ == '__main__':
     main()

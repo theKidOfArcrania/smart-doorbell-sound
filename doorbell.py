@@ -34,6 +34,8 @@ def get_ip():
 
     raise ValueError('Unable to pull IP')
 
+ip = get_ip()
+redirect_uri = f'https://redirect.thekidofarcrania.com/{ip}:3000/auth'
 class AuthFlow:
     def __init__(self):
         outer = self
@@ -89,10 +91,9 @@ class AuthFlow:
             httpd.handle_request()
         return self._code
 
-ip = get_ip()
-redirect_uri = f'https://redirect.thekidofarcrania.com/{ip}:3000/auth'
 def obtain_token():
     auth_code = AuthFlow().launch_auth()
+    print('Auth acknowledged')
     r = requests.post(
         'https://www.googleapis.com/oauth2/v4/token',
         params = {

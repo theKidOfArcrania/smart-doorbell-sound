@@ -2,10 +2,12 @@ import argparse
 import auth
 import json
 import requests
+import re
 import subprocess
 
 from concurrent.futures import TimeoutError
-from http.server import BaseHttpRequestHandler, HTTPServer
+from functools import cache
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from google.cloud import pubsub_v1
 from subprocess import check_output
 from urllib.parse import urlencode, urlparse, parse_qs
@@ -19,16 +21,25 @@ aplay_group.add_argument('file', metavar='FILE', help='sound file to play for do
 base = 'https://smartdevicemanagement.googleapis.com/v1'
 base_ent = f'{base}/enterprises/{auth.project_id}'
 
+@cache
 def get_ip():
-    output = check_output("ip addr show dev wlan0 | grep 'inet ' | awk -F '/' -F ' +|/' '{ print $3 }'", shell=True)
-    return str(output.strip(), 'utf8')
+    default_route = str(check_output(['ip', 'route']).split(b'\n')[0], 'utf8')
+    mt = re.match('default via [0-9.]+ dev ([a-zA-Z0-9]+)', default_route)
+    dev = mt.group(1)
+    output = str(check_output(['ip', 'addr', 'show', 'dev', dev]), 'utf8')
+    for line in output.split('\n'):
+        before, delim, addr = line.strip().partition('inet ')
+        if delim != '' and before == '':
+            return addr.split('/')[0]
+
+    raise ValueError('Unable to pull IP')
 
 class AuthFlow:
     def __init__(self):
         outer = self
 
         url_query = urlencode({
-            'redirect_uri': 'https://www.google.com',
+            'redirect_uri': redirect_uri,
             'access_type': 'offline',
             'prompt': 'consent',
             'client_id': auth.client_id,
@@ -42,14 +53,13 @@ class AuthFlow:
                 pass
 
             def do_GET(self):
-                outer._code
                 url = urlparse(self.path)
 
                 if url.path == '/':
                     self.send_response(307)
-                    self.send_headers('location', url)
+                    self.send_header('location', auth_url)
                     self.end_headers()
-                    self.wfile.write(bytes(f'Redirected to {url}', 'utf8'))
+                    self.wfile.write(bytes(f'Redirected to {auth_url}', 'utf8'))
                 elif url.path == '/auth':
                     qs = parse_qs(url.query)
                     error = qs.get('error')
@@ -57,7 +67,7 @@ class AuthFlow:
                         self.send_response(200)
                         self.end_headers()
                         self.wfile.write(bytes('Success! You can now close this tab.', 'utf8'))
-                        code = qs.get('code')[0]
+                        outer._code = qs.get('code')[0]
                     else:
                         self.send_response(403)
                         self.end_headers()
@@ -79,6 +89,7 @@ class AuthFlow:
             httpd.handle_request()
         return self._code
 
+ip = get_ip()
 redirect_uri = f'https://redirect.thekidofarcrania.com/{ip}:3000/auth'
 def obtain_token():
     auth_code = AuthFlow().launch_auth()
@@ -154,7 +165,6 @@ def play_doorbell():
     args.append(ns.file)
     subprocess.Popen(args)
 
-
 def callback(message: pubsub_v1.subscriber.message.Message) -> None:
     message.ack()
     message = json.loads(message.data)
@@ -172,7 +182,7 @@ def main():
     if ns.test:
         play_doorbell()
 
-    print(api_function(list_devices))
+    api_function(list_devices)
 
     subscriber = pubsub_v1.SubscriberClient()
     subscription_path = subscriber.subscription_path(
@@ -187,7 +197,7 @@ def main():
     with subscriber:
         while True:
             try:
-                streaming_pull_future.result(5)
+                streaming_pull_future.result(60 * 60)
             except TimeoutError:
                 pass
 

@@ -169,9 +169,12 @@ def play_doorbell():
 def callback(message: pubsub_v1.subscriber.message.Message) -> None:
     message.ack()
     message = json.loads(message.data)
+    if 'resourceUpdate' not in message or 'events' not in message['resourceUpdate']:
+        print(f'Other message: {message}')
+        return
     if 'sdm.devices.events.DoorbellChime.Chime' not in \
             message['resourceUpdate']['events']:
-                print(f'Other message: {message}')
+                print(f'Other message 2: {message}')
                 return
     if message['eventThreadState'] == 'STARTED':
         play_doorbell()

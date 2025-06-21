@@ -125,7 +125,7 @@ def api_function(request_fn):
     if token == None:
         try:
             token = json.load(open('token', 'r'))
-            refresh_token(token)
+            token.update(refresh_token(token))
         except:
             print('Refresh auth failed... Trying authenticating')
             token = obtain_token()
@@ -133,7 +133,7 @@ def api_function(request_fn):
             json.dump(token, f)
     data = request_fn(token)
     if 'error' in data:
-        token = refresh_token(token)
+        token.update(refresh_token(token))
         with open('token', 'w') as f:
             json.dump(token, f)
         data = request_fn(token)
